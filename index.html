@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Interactive Square Packing</title>
+
+<style>
+body {
+  margin: 0;
+  background: #111;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  color: white;
+  font-family: sans-serif;
+}
+
+#container {
+  position: relative;
+}
+
+#ui {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  font-size: 14px;
+  user-select: none;
+  background: rgba(0,0,0,0.5);
+  padding: 12px;
+  border-radius: 8px;
+  width: 220px;
+}
+
+input[type="range"],
+input[type="number"] {
+  width: 140px;
+}
+
+.value {
+  float: right;
+}
+</style>
+</head>
+<body>
+
+<div id="container"></div>
+
+<div id="ui">
+  Boxes:
+  <input id="count" type="number" value="5" min="1" max="200"><br><br>
+
+  Box size (px):
+  <input id="sizeInput" type="number" step="1" value="200">
+  <div id="sizeLabel"></div><br>
+
+  Friction
+  <span class="value" id="frictionVal"></span><br>
+  <input id="friction" type="range" min="0" max="1" step="0.01" value="0"><br>
+
+  Air friction
+  <span class="value" id="frictionAirVal"></span><br>
+  <input id="frictionAir" type="range" min="0" max="0.1" step="0.001" value="0"><br>
+
+  Restitution
+  <span class="value" id="restitutionVal"></span><br>
+  <input id="restitution" type="range" min="0" max="1" step="0.01" value="1"><br>
+
+  Density
+  <span class="value" id="densityVal"></span><br>
+  <input id="density" type="range" min="0.0005" max="0.01" step="0.0005" value="0.002"><br><br>
+
+  <label>
+    <input type="checkbox" id="showVelocity">
+    Show velocity
+  </label><br><br>
+
+  <button onclick="reset()">Reset</button>
+  <button onclick="exportJSON()">Export</button>
+  <input type="file" id="importFile" accept=".json"><br><br>
+
+  <div id="momentum">Total momentum: 0</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.20.0/matter.min.js"></script>
+<script>
+const {
+  Engine, Render, Runner,
+  Bodies, Composite, Body,
+  Mouse, MouseConstraint, Events
+} = Matter;
+
+const FRAME_SIZE = 600;
+const WALL_THICKNESS = 200;
+const VELOCITY_SCALE = 15;
+
+let engine, world, render, runner;
+let boxes = [];
+let currentBoxSize = 200;
+
+const ui = {
+  count: document.getElementById("count"),
+  size: document.getElementById("sizeInput"),
+  friction: document.getElementById("friction"),
+  frictionAir: document.getElementById("frictionAir"),
+  restitution: document.getElementById("restitution"),
+  density: document.getElementById("density"),
+  showVelocity: document.getElementById("showVelocity")
+};
+
+const labels = {
+  friction: document.getElementById("frictionVal"),
+  frictionAir: document.getElementById("frictionAirVal"),
+  restitution: document.getElementById("restitutionVal"),
+  density: document.getElementById("densityVal"),
+  size: document.getElementById("sizeLabel")
+};
+
+function updateSizeLabel() {
+  const px = +ui.size.value;
+  const pct = (px / FRAME_SIZE) * 100;
+  labels.size.innerText = `${px.toFixed(1)} px (${pct.toFixed(1)}% frame width)`;
+}
+
+function updateSizeLive() {
+  const newSize = +ui.size.value;
+  const scale = newSize / currentBoxSize;
+  boxes.forEach(b => Body.scale(b, scale, scale));
+  currentBoxSize = newSize;
+  updateSizeLabel();
+}
+
+function applyPhysicsLive() {
+  boxes.forEach(b => {
+    b.friction = +ui.friction.value;
+    b.frictionAir = +ui.frictionAir.value;
+    b.restitution = +ui.restitution.value;
+    Body.setDensity(b, +ui.density.value);
+  });
+
+  labels.friction.innerText = ui.friction.value;
+  labels.frictionAir.innerText = ui.frictionAir.value;
+  labels.restitution.innerText = ui.restitution.value;
+  labels.density.innerText = ui.density.value;
+}
+
+Object.values(ui).forEach(el => {
+  if (el.type !== "checkbox")
+    el.addEventListener("input", applyPhysicsLive);
+});
+ui.size.addEventListener("input", updateSizeLive);
+
+function reset() {
+  if (engine) {
+    Render.stop(render);
+    Runner.stop(runner);
+    Composite.clear(world);
+    render.canvas.remove();
+  }
+
+  engine = Engine.create();
+  engine.gravity.x = 0;
+  engine.gravity.y = 0;
+  world = engine.world;
+
+  render = Render.create({
+    element: document.getElementById("container"),
+    engine,
+    options: {
+      width: FRAME_SIZE,
+      height: FRAME_SIZE,
+      wireframes: false,
+      background: "#111"
+    }
+  });
+
+  runner = Runner.create();
+
+  const c = FRAME_SIZE / 2;
+  Composite.add(world, [
+    Bodies.rectangle(c, -WALL_THICKNESS/2, FRAME_SIZE, WALL_THICKNESS, { isStatic: true, slop: 0 }),
+    Bodies.rectangle(c, FRAME_SIZE + WALL_THICKNESS/2, FRAME_SIZE, WALL_THICKNESS, { isStatic: true, slop: 0 }),
+    Bodies.rectangle(-WALL_THICKNESS/2, c, WALL_THICKNESS, FRAME_SIZE, { isStatic: true, slop: 0 }),
+    Bodies.rectangle(FRAME_SIZE + WALL_THICKNESS/2, c, WALL_THICKNESS, FRAME_SIZE, { isStatic: true, slop: 0 })
+  ]);
+
+  boxes = [];
+  currentBoxSize = +ui.size.value;
+
+  for (let i = 0; i < +ui.count.value; i++) {
+    const b = Bodies.rectangle(
+      Math.random() * FRAME_SIZE,
+      Math.random() * FRAME_SIZE,
+      currentBoxSize,
+      currentBoxSize
+    );
+
+    Body.setVelocity(b, {
+      x: (Math.random() - 0.5) * 5,
+      y: (Math.random() - 0.5) * 5
+    });
+
+    boxes.push(b);
+  }
+
+  Composite.add(world, boxes);
+  applyPhysicsLive();
+  updateSizeLabel();
+
+  const mouse = Mouse.create(render.canvas);
+  Composite.add(world, MouseConstraint.create(engine, {
+    mouse,
+    constraint: { stiffness: 0.2, render: { visible: false } }
+  }));
+  render.mouse = mouse;
+
+  Events.on(engine, "afterUpdate", () => {
+    for (const b of boxes) {
+      const h = currentBoxSize / 2;
+      b.position.x = Math.max(h, Math.min(FRAME_SIZE - h, b.position.x));
+      b.position.y = Math.max(h, Math.min(FRAME_SIZE - h, b.position.y));
+    }
+  });
+
+  Events.on(render, "afterRender", () => {
+    if (!ui.showVelocity.checked) return;
+    const ctx = render.context;
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 2;
+
+    boxes.forEach(b => {
+      const v = b.velocity;
+      if (Math.hypot(v.x, v.y) < 0.01) return;
+      ctx.beginPath();
+      ctx.moveTo(b.position.x, b.position.y);
+      ctx.lineTo(
+        b.position.x + v.x * VELOCITY_SCALE,
+        b.position.y + v.y * VELOCITY_SCALE
+      );
+      ctx.stroke();
+    });
+  });
+
+  Render.run(render);
+  Runner.run(runner, engine);
+}
+
+function exportJSON() {
+  const data = {
+    count: +ui.count.value,
+    boxSize: +ui.size.value,
+    physics: {
+      friction: +ui.friction.value,
+      frictionAir: +ui.frictionAir.value,
+      restitution: +ui.restitution.value,
+      density: +ui.density.value
+    }
+  };
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "square-packing.json";
+  a.click();
+}
+
+document.getElementById("importFile").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const d = JSON.parse(reader.result);
+    ui.count.value = d.count;
+    ui.size.value = d.boxSize;
+    ui.friction.value = d.physics.friction;
+    ui.frictionAir.value = d.physics.frictionAir;
+    ui.restitution.value = d.physics.restitution;
+    ui.density.value = d.physics.density;
+    reset();
+  };
+  reader.readAsText(file);
+});
+
+function updateMomentum() {
+  let px = 0, py = 0;
+  boxes.forEach(b => {
+    px += b.mass * b.velocity.x;
+    py += b.mass * b.velocity.y;
+  });
+  document.getElementById("momentum").innerText =
+    "Total momentum: " + Math.hypot(px, py).toFixed(4);
+  requestAnimationFrame(updateMomentum);
+}
+
+reset();
+updateMomentum();
+</script>
+</body>
+</html>
