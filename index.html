@@ -17,7 +17,19 @@ body {
   font-family: sans-serif;
 }
 
-#container { position: relative; }
+  #container {
+    width: 100vmin;
+    height: 100vmin;
+    max-width: 600px;
+    max-height: 600px;
+  }
+
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
 
 #ui {
   position: fixed;
@@ -36,6 +48,30 @@ input[type="range"],
 input[type="number"] { width: 140px; }
 
 .value { float: right; }
+
+
+  /* Mobile scaling */
+  @media (max-width: 768px) {
+    #ui {
+      transform: scale(0.7);
+      transform-origin: top left;
+
+      width: 180px;
+      padding: 8px;
+      font-size: 12px;
+    }
+
+    input[type="range"],
+    input[type="number"] {
+      width: 110px;
+    }
+
+    button {
+      font-size: 12px;
+      padding: 4px 6px;
+    }
+  }
+
 </style>
 </head>
 <body>
@@ -91,7 +127,7 @@ let paths = new Map();
 /* === PRESSURE SYSTEM === */
 const pressureMap = new Map();
 const PRESSURE_DECAY = 0.9;
-const PRESSURE_SCALE = 0.002;
+const PRESSURE_SCALE = 0.02;
 
 const ui = {
   count,
@@ -130,13 +166,18 @@ function updateSizeLabel() {
   labels.size.innerText = `${px}px (${(px/FRAME_SIZE*100).toFixed(1)}%)`;
 }
 
-function updateSizeLive() {
-  const newSize = +ui.size.value;
-  const scale = newSize / currentBoxSize;
-  boxes.forEach(b => Body.scale(b, scale, scale));
-  currentBoxSize = newSize;
-  updateSizeLabel();
-}
+  function updateSizeLive() {
+    const newSize = Number(ui.size.value);
+
+    if (!Number.isNaN(newSize) && newSize > 0) {
+      const scale = newSize / currentBoxSize;
+      boxes.forEach(b => Body.scale(b, scale, scale));
+      currentBoxSize = newSize;
+    }
+
+    updateSizeLabel();
+  }
+
 
 function applyPhysicsLive() {
   boxes.forEach(b => {
