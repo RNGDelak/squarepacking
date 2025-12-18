@@ -117,7 +117,7 @@ const {
 const FRAME_SIZE = 600;
 let WALL_THICKNESS = 2000000;
 const VELOCITY_SCALE = 15;
-let PATH_LIFE = 2000;
+let PATH_LIFE = 200;
 
 let engine, world, render, runner;
 let boxes = [];
@@ -127,7 +127,7 @@ let paths = new Map();
 /* === PRESSURE SYSTEM === */
 const pressureMap = new Map();
 const PRESSURE_DECAY = 0.9;
-const PRESSURE_SCALE = 0.02;
+const PRESSURE_SCALE = 0.09;
 
 const ui = {
   count,
@@ -154,7 +154,7 @@ function randColor() {
 }
 
 function pressureColor(p) {
-  const t = Math.min(1, p * PRESSURE_SCALE);
+  const t = Math.min(1, Math.cbrt(p) * PRESSURE_SCALE);
   const r = 255;
   const g = Math.floor(255 * (1 - t));
   const b = Math.floor(255 * (1 - t));
